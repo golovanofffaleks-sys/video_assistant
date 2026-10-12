@@ -3,6 +3,7 @@ import pandas as pd
 import os
 from assistant.searcher import fetch_videos
 from assistant.filters import apply_technical_filters
+from assistant.data_manager import prepare_approved_row
 
 # Константы файлов
 QUEUE_FILE = "queue.csv"
@@ -11,7 +12,7 @@ APPROVED_FILE = "approved.csv"
 def load_data(file_path):
     if os.path.exists(file_path):
         return pd.read_csv(file_path)
-    return pd.DataFrame(columns=['title', 'duration', 'url'])
+    return pd.DataFrame(columns=['title', 'duration', 'url', 'start_time', 'end_time', 'category'])
 
 def save_data(df, file_path):
     df.to_csv(file_path, index=False, encoding='utf-8-sig')
@@ -23,8 +24,9 @@ def main():
 
     # --- Сайдбар: Настройки и Поиск ---
     st.sidebar.header("⚙️ Настройки")
-    query = st.sidebar.text_input("Поисковый запрос", value="сборка мебели")
-    min_dur = st.sidebar.number_input("Мин. длительность (сек)", value=15)
+    category = st.sidebar.selectbox("Тематика", ["кулинария", "обзоры техники", "DIY/ремонт", "трэвел-блоги"])
+    query = st.sidebar.text_input("Поисковый запрос", value=category)
+    min_dur = st.sidebar.number_input("Мин. длительность (сек)", value=180) # 3 минуты по ТЗ
     max_res = st.sidebar.slider("Кол-во результатов", 10, 500, 100)
     
     if st.sidebar.button("🔍 Начать поиск"):
@@ -37,7 +39,10 @@ def main():
                     filtered.append({
                         'title': v.get('title', 'Без названия'),
                         'duration': f"{duration_sec // 60}:{duration_sec % 60:02d}",
-                        'url': f"https://www.youtube.com/watch?v={v.get('id')}"
+                        'url': f"https://www.youtube.com/watch?v={v.get('id')}",
+                        'start_time': '',
+                        'end_time': '',
+                        'category': category
                     })
             
             # Сохраняем в очередь
@@ -67,11 +72,19 @@ def main():
                     # Кнопка ссылки
                     c3.markdown(f"[Открыть видео]({row['url']})")
                     
+                    # Поля для таймкодов
+                    t_cols = st.columns([2, 2])
+                    start_t = t_cols[0].text_input("Начало", key=f"start_{idx}", placeholder="00:00", label_visibility="collapsed")
+                    end_t = t_cols[1].text_input("Конец", key=f"end_{idx}", placeholder="00:00", label_visibility="collapsed")
+                    
                     # Кнопки действий
                     btn_cols = st.columns([1, 1])
                     if btn_cols[0].button(f"✅ Подходит", key=f"app_{idx}"):
+                        # Используем протестированную функцию для подготовки данных
+                        row_data = prepare_approved_row(row, start_t, end_t)
+                        
                         # Добавляем в одобренные
-                        df_approved = pd.concat([df_approved, pd.DataFrame([row])], ignore_index=True)
+                        df_approved = pd.concat([df_approved, pd.DataFrame([row_data])], ignore_index=True)
                         save_data(df_approved, APPROVED_FILE)
                         # Удаляем из очереди
                         df_queue = df_queue.drop(idx)
